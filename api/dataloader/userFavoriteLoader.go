@@ -7,34 +7,41 @@ import (
 	"gorm.io/gorm"
 )
 
+func makeUniqueIDs(idMap map[int]struct{}) []int {
+	uniqueIDs := make([]int, len(idMap))
+	count := 0
+	for id := range idMap {
+		uniqueIDs[count] = id
+		count++
+	}
+
+	return uniqueIDs
+}
+
+func isFavorite(userMediaFavorites []*models.UserMediaData, userID int, mediaID int) bool {
+	for _, fav := range userMediaFavorites {
+		if fav.UserID == userID && fav.MediaID == mediaID {
+			return true
+		}
+	}
+
+	return false
+}
+
 func NewUserFavoriteLoader(db *gorm.DB) *UserFavoritesLoader {
 	return &UserFavoritesLoader{
 		maxBatch: 100,
 		wait:     5 * time.Millisecond,
 		fetch: func(keys []*models.UserMediaData) ([]bool, []error) {
-
 			userIDMap := make(map[int]struct{}, len(keys))
 			mediaIDMap := make(map[int]struct{}, len(keys))
 			for _, key := range keys {
 				userIDMap[key.UserID] = struct{}{}
 				mediaIDMap[key.MediaID] = struct{}{}
 			}
-			
 
-			uniqueUserIDs := make([]int, len(userIDMap))
-			uniqueMediaIDs := make([]int, len(mediaIDMap))
-
-			count := 0
-			for id := range userIDMap {
-				uniqueUserIDs[count] = id
-				count++
-			}
-
-			count = 0
-			for id := range mediaIDMap {
-				uniqueMediaIDs[count] = id
-				count++
-			}
+			uniqueUserIDs := makeUniqueIDs(userIDMap)
+			uniqueMediaIDs := makeUniqueIDs(mediaIDMap)
 
 			var userMediaFavorites []*models.UserMediaData
 			err := db.Where("user_id IN (?)", uniqueUserIDs).Where("media_id IN (?)", uniqueMediaIDs).Where("favorite = TRUE").Find(&userMediaFavorites).Error
@@ -44,14 +51,7 @@ func NewUserFavoriteLoader(db *gorm.DB) *UserFavoritesLoader {
 
 			result := make([]bool, len(keys))
 			for i, key := range keys {
-				favorite := false
-				for _, fav := range userMediaFavorites {
-					if fav.UserID == key.UserID && fav.MediaID == key.MediaID {
-						favorite = true
-						break
-					}
-				}
-				result[i] = favorite
+				result[i] = isFavorite(userMediaFavorites, key.UserID, key.MediaID)
 			}
 
 			return result, nil
